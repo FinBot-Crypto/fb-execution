@@ -105,27 +105,16 @@ class ExecutionEngine:
             filled_qty = float(buy_order.get("filled", quantity))
             logger.info(f"  {symbol}: BUY executado {filled_qty} @ {filled_price}")
 
-            # Stop-Limit SELL (Stop Loss)
-            sl_trigger = round(sl_price * 1.001, 4)
+            # OCO: TP (limit) + SL (stop-limit) — um cancela o outro
+            oco_order = None
             try:
-                sl_order = self.exchange.create_order(
-                    symbol, "stop_loss_limit", "sell", filled_qty, sl_price,
-                    {"stopPrice": sl_trigger}
+                oco_order = self.exchange.create_oco_order(
+                    symbol, "sell", filled_qty, tp_price, sl_price,
+                    {"stopLimitPrice": sl_price}
                 )
-                logger.info(f"  {symbol}: SL stop-limit @ {sl_price} (trigger={sl_trigger})")
+                logger.info(f"  {symbol}: OCO SL={sl_price} TP={tp_price}")
             except Exception as e:
-                logger.error(f"  {symbol}: erro ao criar SL: {e}")
-                sl_order = None
-
-            # Limit SELL (Take Profit)
-            try:
-                tp_order = self.exchange.create_order(
-                    symbol, "limit", "sell", filled_qty, tp_price
-                )
-                logger.info(f"  {symbol}: TP limit @ {tp_price}")
-            except Exception as e:
-                logger.error(f"  {symbol}: erro ao criar TP: {e}")
-                tp_order = None
+                logger.error(f"  {symbol}: erro ao criar OCO: {e}")
 
             # Persiste no KV store
             import time
@@ -139,8 +128,7 @@ class ExecutionEngine:
                     "score": order.get("score"), "rsi": order.get("rsi"),
                     "direction": order.get("direction", "LONG"),
                     "buy_order_id": buy_order.get("id"),
-                    "sl_order_id": sl_order.get("id") if sl_order else None,
-                    "tp_order_id": tp_order.get("id") if tp_order else None}
+                    "oco_order_id": oco_order.get("id") if oco_order else None}
 
         except Exception as e:
             logger.error(f"  {symbol}: erro ao executar ordem: {e}")
