@@ -93,7 +93,10 @@ class ExecutionEngine:
                          "sl_price": sl_price, "tp_price": tp_price, "entry_time": __import__('time').time()}
             await self.kv.put(symbol.replace("/", "_"), json.dumps(pos_data).encode())
             return {"symbol": symbol, "status": "dry_run", "quantity": quantity,
-                    "entry_price": entry_price, "sl_price": sl_price, "tp_price": tp_price}
+                    "entry_price": entry_price, "sl_price": sl_price, "tp_price": tp_price,
+                    "tier": order.get("tier"), "strategy": order.get("strategy"),
+                    "score": order.get("score"), "rsi": order.get("rsi"),
+                    "direction": order.get("direction", "LONG")}
 
         try:
             logger.info(f"  {symbol}: executando market BUY {quantity}...")
@@ -132,6 +135,9 @@ class ExecutionEngine:
 
             return {"symbol": symbol, "status": "executed", "quantity": filled_qty,
                     "entry_price": filled_price, "sl_price": sl_price, "tp_price": tp_price,
+                    "tier": order.get("tier"), "strategy": order.get("strategy"),
+                    "score": order.get("score"), "rsi": order.get("rsi"),
+                    "direction": order.get("direction", "LONG"),
                     "buy_order_id": buy_order.get("id"),
                     "sl_order_id": sl_order.get("id") if sl_order else None,
                     "tp_order_id": tp_order.get("id") if tp_order else None}
