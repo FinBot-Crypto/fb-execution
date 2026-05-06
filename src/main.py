@@ -25,27 +25,44 @@ class ExecutionEngine:
     def __init__(self):
         self.nc = None
         self.js = None
+        self.kv = None
         self.exchange = ccxt.binance({
             "apiKey": BINANCE_API_KEY,
             "secret": BINANCE_API_SECRET,
             "enableRateLimit": True,
         })
-        self.open_positions = {}  # symbol -> order_info
 
     async def connect_nats(self):
         self.nc = await nats.connect(NATS_URL)
         self.js = self.nc.jetstream()
+        self.kv = await self.js.key_value("active_positions")
         logger.info(f"NATS conectado: {NATS_URL}")
 
+    async def position_exists(self, symbol):
+        """Verifica se já tem posição aberta no KV store."""
+        try:
+            key = symbol.replace("/", "_")
+            await self.kv.get(key)
+            return True
+        except Exception:
+            return False
+
+    async def count_positions(self):
+        """Conta posições ativas no KV store."""
+        try:
+            keys = await self.kv.keys()
+            return len(keys)
+        except Exception:
+            return 0
+
     async def get_open_positions(self):
-        """Verifica posições já abertas na conta."""
+        """Verifica posições já abertas na conta (da Binance, não mock)."""
         try:
             balance = self.exchange.fetch_balance()
             positions = {}
             for asset, info in balance["total"].items():
                 if info > 0 and asset != "USDT":
-                    # Verifica se é um ativo que temos (ignora dust)
-                    if info * (balance.get(asset, {}).get("USDT", 0) or 1) > 5:  # min 5 USDT
+                    if info * (balance.get(asset, {}).get("USDT", 0) or 1) > 5:
                         positions[asset] = info
             return positions
         except Exception as e:
@@ -59,47 +76,34 @@ class ExecutionEngine:
         tp_price = order["tp_price"]
         entry_price = order["entry_price"]
 
-        base = symbol.split("/")[0]
-
-        # Verifica se já tem posição aberta
-        if base in self.open_positions:
+        # Verifica se já tem posição aberta (KV store)
+        if await self.position_exists(symbol):
             logger.info(f"  {symbol}: já tem posição aberta → ignora")
             return None
 
-        # Verifica máximo de posições
-        active_count = len(self.open_positions)
+        # Verifica máximo de posições (KV store)
+        active_count = await self.count_positions()
         if active_count >= MAX_POSITIONS:
             logger.info(f"  {symbol}: max posições ({MAX_POSITIONS}) atingido → ignora")
             return None
 
         if DRY_RUN:
             logger.info(f"  [DRY RUN] {symbol}: BUY {quantity} @ ~{entry_price} SL={sl_price} TP={tp_price}")
-            self.open_positions[base] = {
-                "symbol": symbol,
-                "quantity": quantity,
-                "entry_price": entry_price,
-                "sl_price": sl_price,
-                "tp_price": tp_price,
-            }
-            return {
-                "symbol": symbol,
-                "status": "dry_run",
-                "quantity": quantity,
-                "entry_price": entry_price,
-                "sl_price": sl_price,
-                "tp_price": tp_price,
-            }
+            pos_data = {"symbol": symbol, "quantity": quantity, "entry_price": entry_price,
+                         "sl_price": sl_price, "tp_price": tp_price, "entry_time": __import__('time').time()}
+            await self.kv.put(symbol.replace("/", "_"), json.dumps(pos_data).encode())
+            return {"symbol": symbol, "status": "dry_run", "quantity": quantity,
+                    "entry_price": entry_price, "sl_price": sl_price, "tp_price": tp_price}
 
         try:
-            # 1. Market BUY
             logger.info(f"  {symbol}: executando market BUY {quantity}...")
             buy_order = self.exchange.create_order(symbol, "market", "buy", quantity)
             filled_price = float(buy_order.get("average", buy_order.get("price", entry_price)))
             filled_qty = float(buy_order.get("filled", quantity))
             logger.info(f"  {symbol}: BUY executado {filled_qty} @ {filled_price}")
 
-            # 2. Stop-Limit SELL (Stop Loss)
-            sl_trigger = round(sl_price * 1.001, 4)  # trigger ligeiramente acima do SL
+            # Stop-Limit SELL (Stop Loss)
+            sl_trigger = round(sl_price * 1.001, 4)
             try:
                 sl_order = self.exchange.create_order(
                     symbol, "stop_loss_limit", "sell", filled_qty, sl_price,
@@ -110,7 +114,7 @@ class ExecutionEngine:
                 logger.error(f"  {symbol}: erro ao criar SL: {e}")
                 sl_order = None
 
-            # 3. Limit SELL (Take Profit)
+            # Limit SELL (Take Profit)
             try:
                 tp_order = self.exchange.create_order(
                     symbol, "limit", "sell", filled_qty, tp_price
@@ -120,25 +124,17 @@ class ExecutionEngine:
                 logger.error(f"  {symbol}: erro ao criar TP: {e}")
                 tp_order = None
 
-            self.open_positions[base] = {
-                "symbol": symbol,
-                "quantity": filled_qty,
-                "entry_price": filled_price,
-                "sl_price": sl_price,
-                "tp_price": tp_price,
-            }
+            # Persiste no KV store
+            import time
+            pos_data = {"symbol": symbol, "quantity": filled_qty, "entry_price": filled_price,
+                         "sl_price": sl_price, "tp_price": tp_price, "entry_time": time.time()}
+            await self.kv.put(symbol.replace("/", "_"), json.dumps(pos_data).encode())
 
-            return {
-                "symbol": symbol,
-                "status": "executed",
-                "quantity": filled_qty,
-                "entry_price": filled_price,
-                "sl_price": sl_price,
-                "tp_price": tp_price,
-                "buy_order_id": buy_order.get("id"),
-                "sl_order_id": sl_order.get("id") if sl_order else None,
-                "tp_order_id": tp_order.get("id") if tp_order else None,
-            }
+            return {"symbol": symbol, "status": "executed", "quantity": filled_qty,
+                    "entry_price": filled_price, "sl_price": sl_price, "tp_price": tp_price,
+                    "buy_order_id": buy_order.get("id"),
+                    "sl_order_id": sl_order.get("id") if sl_order else None,
+                    "tp_order_id": tp_order.get("id") if tp_order else None}
 
         except Exception as e:
             logger.error(f"  {symbol}: erro ao executar ordem: {e}")
