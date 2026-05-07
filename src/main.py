@@ -105,15 +105,30 @@ class ExecutionEngine:
             filled_qty = float(buy_order.get("filled", quantity))
             logger.info(f"  {symbol}: BUY executado {filled_qty} @ {filled_price}")
 
+            # Quantidade real no saldo (pós-taxa) para OCO
+            try:
+                bal = self.exchange.fetch_balance()
+                base = symbol.split("/")[0]
+                actual_qty = bal["free"].get(base, filled_qty)
+                actual_qty_str = self.exchange.amount_to_precision(symbol, actual_qty)
+                sell_qty = float(actual_qty_str)
+                if sell_qty <= 0:
+                    sell_qty = self.exchange.amount_to_precision(symbol, filled_qty)
+                    sell_qty = float(sell_qty) if isinstance(sell_qty, str) else sell_qty
+            except Exception:
+                sell_qty = filled_qty
+            logger.info(f"  {symbol}: qty para OCO: {sell_qty} (comprado: {filled_qty})")
+
             # OCO: TP + SL — um cancela o outro, com retry
             oco_order = None
             import time as _time
             for attempt in range(3):
                 try:
+                    oco_qty_str = self.exchange.amount_to_precision(symbol, sell_qty)
                     oco_order = self.exchange.private_post_order_oco({
                         "symbol": symbol.replace("/", ""),
                         "side": "SELL",
-                        "quantity": filled_qty,
+                        "quantity": oco_qty_str,
                         "price": tp_price,
                         "stopPrice": sl_price,
                         "stopLimitPrice": sl_price,
@@ -129,18 +144,19 @@ class ExecutionEngine:
                         # 3 falhas: vender na hora pra não ficar exposto
                         logger.error(f"  {symbol}: OCO falhou 3x — vendendo posição imediatamente!")
                         try:
-                            self.exchange.create_order(symbol, "market", "sell", filled_qty)
+                            qty_str = self.exchange.amount_to_precision(symbol, sell_qty)
+                            self.exchange.create_order(symbol, "market", "sell", qty_str)
                             logger.info(f"  {symbol}: vendido a mercado após falha do OCO")
                         except Exception as sell_err:
                             logger.error(f"  {symbol}: erro ao vender: {sell_err}")
                         oco_order = None
 
             # Persiste no KV store
-            pos_data = {"symbol": symbol, "quantity": filled_qty, "entry_price": filled_price,
+            pos_data = {"symbol": symbol, "quantity": sell_qty, "entry_price": filled_price,
                          "sl_price": sl_price, "tp_price": tp_price, "entry_time": _time.time()}
             await self.kv.put(symbol.replace("/", "_"), json.dumps(pos_data).encode())
 
-            return {"symbol": symbol, "status": "executed", "quantity": filled_qty,
+            return {"symbol": symbol, "status": "executed", "quantity": sell_qty,
                     "entry_price": filled_price, "sl_price": sl_price, "tp_price": tp_price,
                     "tier": order.get("tier"), "strategy": order.get("strategy"),
                     "score": order.get("score"), "rsi": order.get("rsi"),
