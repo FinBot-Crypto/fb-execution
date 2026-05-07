@@ -105,26 +105,39 @@ class ExecutionEngine:
             filled_qty = float(buy_order.get("filled", quantity))
             logger.info(f"  {symbol}: BUY executado {filled_qty} @ {filled_price}")
 
-            # OCO: TP + SL — um cancela o outro
+            # OCO: TP + SL — um cancela o outro, com retry
             oco_order = None
-            try:
-                oco_order = self.exchange.private_post_order_oco({
-                    "symbol": symbol.replace("/", ""),
-                    "side": "SELL",
-                    "quantity": filled_qty,
-                    "price": tp_price,
-                    "stopPrice": sl_price,
-                    "stopLimitPrice": sl_price,
-                    "stopLimitTimeInForce": "GTC",
-                })
-                logger.info(f"  {symbol}: OCO SL={sl_price} TP={tp_price} orderListId={oco_order.get('orderListId')}")
-            except Exception as e:
-                logger.error(f"  {symbol}: erro ao criar OCO: {e}")
+            import time as _time
+            for attempt in range(3):
+                try:
+                    oco_order = self.exchange.private_post_order_oco({
+                        "symbol": symbol.replace("/", ""),
+                        "side": "SELL",
+                        "quantity": filled_qty,
+                        "price": tp_price,
+                        "stopPrice": sl_price,
+                        "stopLimitPrice": sl_price,
+                        "stopLimitTimeInForce": "GTC",
+                    })
+                    logger.info(f"  {symbol}: OCO SL={sl_price} TP={tp_price} orderListId={oco_order.get('orderListId')}")
+                    break
+                except Exception as e:
+                    logger.error(f"  {symbol}: OCO falhou (tentativa {attempt+1}/3): {e}")
+                    if attempt < 2:
+                        _time.sleep(1)
+                    else:
+                        # 3 falhas: vender na hora pra não ficar exposto
+                        logger.error(f"  {symbol}: OCO falhou 3x — vendendo posição imediatamente!")
+                        try:
+                            self.exchange.create_order(symbol, "market", "sell", filled_qty)
+                            logger.info(f"  {symbol}: vendido a mercado após falha do OCO")
+                        except Exception as sell_err:
+                            logger.error(f"  {symbol}: erro ao vender: {sell_err}")
+                        oco_order = None
 
             # Persiste no KV store
-            import time
             pos_data = {"symbol": symbol, "quantity": filled_qty, "entry_price": filled_price,
-                         "sl_price": sl_price, "tp_price": tp_price, "entry_time": time.time()}
+                         "sl_price": sl_price, "tp_price": tp_price, "entry_time": _time.time()}
             await self.kv.put(symbol.replace("/", "_"), json.dumps(pos_data).encode())
 
             return {"symbol": symbol, "status": "executed", "quantity": filled_qty,
