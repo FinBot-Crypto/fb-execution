@@ -105,14 +105,19 @@ class ExecutionEngine:
             filled_qty = float(buy_order.get("filled", quantity))
             logger.info(f"  {symbol}: BUY executado {filled_qty} @ {filled_price}")
 
-            # OCO: TP (limit) + SL (stop-limit) — um cancela o outro
+            # OCO: TP + SL — um cancela o outro
             oco_order = None
             try:
-                oco_order = self.exchange.create_oco_order(
-                    symbol, "sell", filled_qty, tp_price, sl_price,
-                    {"stopLimitPrice": sl_price}
-                )
-                logger.info(f"  {symbol}: OCO SL={sl_price} TP={tp_price}")
+                oco_order = self.exchange.private_post_order_oco({
+                    "symbol": symbol.replace("/", ""),
+                    "side": "SELL",
+                    "quantity": filled_qty,
+                    "price": tp_price,
+                    "stopPrice": sl_price,
+                    "stopLimitPrice": sl_price,
+                    "stopLimitTimeInForce": "GTC",
+                })
+                logger.info(f"  {symbol}: OCO SL={sl_price} TP={tp_price} orderListId={oco_order.get('orderListId')}")
             except Exception as e:
                 logger.error(f"  {symbol}: erro ao criar OCO: {e}")
 
@@ -128,7 +133,7 @@ class ExecutionEngine:
                     "score": order.get("score"), "rsi": order.get("rsi"),
                     "direction": order.get("direction", "LONG"),
                     "buy_order_id": buy_order.get("id"),
-                    "oco_order_id": oco_order.get("id") if oco_order else None}
+                    "oco_order_id": oco_order.get("orderListId") if oco_order else None}
 
         except Exception as e:
             logger.error(f"  {symbol}: erro ao executar ordem: {e}")
