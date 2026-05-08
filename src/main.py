@@ -125,13 +125,15 @@ class ExecutionEngine:
             for attempt in range(3):
                 try:
                     oco_qty_str = self.exchange.amount_to_precision(symbol, sell_qty)
+                    tp_price_str = self.exchange.price_to_precision(symbol, tp_price)
+                    sl_price_str = self.exchange.price_to_precision(symbol, sl_price)
                     oco_order = self.exchange.private_post_order_oco({
                         "symbol": symbol.replace("/", ""),
                         "side": "SELL",
                         "quantity": oco_qty_str,
-                        "price": tp_price,
-                        "stopPrice": sl_price,
-                        "stopLimitPrice": sl_price,
+                        "price": tp_price_str,
+                        "stopPrice": sl_price_str,
+                        "stopLimitPrice": sl_price_str,
                         "stopLimitTimeInForce": "GTC",
                     })
                     logger.info(f"  {symbol}: OCO SL={sl_price} TP={tp_price} orderListId={oco_order.get('orderListId')}")
