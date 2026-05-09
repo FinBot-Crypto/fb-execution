@@ -154,9 +154,15 @@ class ExecutionEngine:
                         # 3 falhas: vender na hora pra não ficar exposto
                         logger.error(f"  {symbol}: OCO falhou 3x — vendendo posição imediatamente!")
                         try:
-                            qty_str = self.exchange.amount_to_precision(symbol, sell_qty)
-                            self.exchange.create_order(symbol, "market", "sell", qty_str)
-                            logger.info(f"  {symbol}: vendido a mercado após falha do OCO")
+                            bal = self.exchange.fetch_balance()
+                            base = symbol.split("/")[0]
+                            free_qty = bal["free"].get(base, sell_qty)
+                            qty_str = self.exchange.amount_to_precision(symbol, free_qty)
+                            if float(qty_str) > 0:
+                                self.exchange.create_order(symbol, "market", "sell", qty_str)
+                                logger.info(f"  {symbol}: vendido saldo total ({qty_str}) após falha do OCO")
+                            else:
+                                logger.info(f"  {symbol}: saldo zerado, nada a vender")
                         except Exception as sell_err:
                             logger.error(f"  {symbol}: erro ao vender: {sell_err}")
                         oco_order = None
