@@ -126,48 +126,48 @@ class ExecutionEngine:
                 import time as _time
                 for attempt in range(3):
                     try:
-                    oco_qty_str = self.exchange.amount_to_precision(symbol, sell_qty)
-                    # Formatar preços com precisão exata
-                    market_info = self.exchange.market(symbol)
-                    price_step = market_info["precision"]["price"]
-                    import math
-                    price_decimals = max(0, -int(round(math.log10(price_step))))
-                    import decimal
-                    tp_str = format(decimal.Decimal(str(round(tp_price, price_decimals))), 'f')
-                    sl_str = format(decimal.Decimal(str(round(sl_price, price_decimals))), 'f')
-                    if float(tp_str) <= float(sl_str) or float(sl_str) <= 0:
-                        raise ValueError("SL/TP inválidos após formatação")
-                    oco_order = self.exchange.private_post_order_oco({
-                        "symbol": symbol.replace("/", ""),
-                        "side": "SELL",
-                        "quantity": oco_qty_str,
-                        "price": tp_str,
-                        "stopPrice": sl_str,
-                        "stopLimitPrice": sl_str,
-                        "stopLimitTimeInForce": "GTC",
-                    })
-                    logger.info(f"  {symbol}: OCO SL={sl_price} TP={tp_price} orderListId={oco_order.get('orderListId')}")
-                    break
-                except Exception as e:
-                    logger.error(f"  {symbol}: OCO falhou (tentativa {attempt+1}/3): {e}")
-                    if attempt < 2:
-                        _time.sleep(1)
-                    else:
-                        # 3 falhas: vender na hora pra não ficar exposto
-                        logger.error(f"  {symbol}: OCO falhou 3x — vendendo posição imediatamente!")
-                        try:
-                            bal = self.exchange.fetch_balance()
-                            base = symbol.split("/")[0]
-                            free_qty = bal["free"].get(base, sell_qty)
-                            qty_str = self.exchange.amount_to_precision(symbol, free_qty)
-                            if float(qty_str) > 0:
-                                self.exchange.create_order(symbol, "market", "sell", qty_str)
-                                logger.info(f"  {symbol}: vendido saldo total ({qty_str}) após falha do OCO")
-                            else:
-                                logger.info(f"  {symbol}: saldo zerado, nada a vender")
-                        except Exception as sell_err:
-                            logger.error(f"  {symbol}: erro ao vender: {sell_err}")
-                        oco_order = None
+                        oco_qty_str = self.exchange.amount_to_precision(symbol, sell_qty)
+                        # Formatar preços com precisão exata
+                        market_info = self.exchange.market(symbol)
+                        price_step = market_info["precision"]["price"]
+                        import math
+                        price_decimals = max(0, -int(round(math.log10(price_step))))
+                        import decimal
+                        tp_str = format(decimal.Decimal(str(round(tp_price, price_decimals))), 'f')
+                        sl_str = format(decimal.Decimal(str(round(sl_price, price_decimals))), 'f')
+                        if float(tp_str) <= float(sl_str) or float(sl_str) <= 0:
+                            raise ValueError("SL/TP inválidos após formatação")
+                        oco_order = self.exchange.private_post_order_oco({
+                            "symbol": symbol.replace("/", ""),
+                            "side": "SELL",
+                            "quantity": oco_qty_str,
+                            "price": tp_str,
+                            "stopPrice": sl_str,
+                            "stopLimitPrice": sl_str,
+                            "stopLimitTimeInForce": "GTC",
+                        })
+                        logger.info(f"  {symbol}: OCO SL={sl_price} TP={tp_price} orderListId={oco_order.get('orderListId')}")
+                        break
+                    except Exception as e:
+                        logger.error(f"  {symbol}: OCO falhou (tentativa {attempt+1}/3): {e}")
+                        if attempt < 2:
+                            _time.sleep(1)
+                        else:
+                            # 3 falhas: vender na hora pra não ficar exposto
+                            logger.error(f"  {symbol}: OCO falhou 3x — vendendo posição imediatamente!")
+                            try:
+                                bal = self.exchange.fetch_balance()
+                                base = symbol.split("/")[0]
+                                free_qty = bal["free"].get(base, sell_qty)
+                                qty_str = self.exchange.amount_to_precision(symbol, free_qty)
+                                if float(qty_str) > 0:
+                                    self.exchange.create_order(symbol, "market", "sell", qty_str)
+                                    logger.info(f"  {symbol}: vendido saldo total ({qty_str}) após falha do OCO")
+                                else:
+                                    logger.info(f"  {symbol}: saldo zerado, nada a vender")
+                            except Exception as sell_err:
+                                logger.error(f"  {symbol}: erro ao vender: {sell_err}")
+                            oco_order = None
 
             # Persiste no KV store
             import time as _time
