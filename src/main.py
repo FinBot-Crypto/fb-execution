@@ -19,6 +19,7 @@ BINANCE_API_KEY = os.getenv("BINANCE_API_KEY", "")
 BINANCE_API_SECRET = os.getenv("BINANCE_API_SECRET", "")
 DRY_RUN = os.getenv("DRY_RUN", "true").lower() == "true"
 MAX_POSITIONS = int(os.getenv("MAX_POSITIONS", "20"))
+USE_OCO = os.getenv("USE_OCO", "false").lower() == "true"
 
 
 class ExecutionEngine:
@@ -119,11 +120,12 @@ class ExecutionEngine:
                 sell_qty = filled_qty
             logger.info(f"  {symbol}: qty para OCO: {sell_qty} (comprado: {filled_qty})")
 
-            # OCO: TP + SL — um cancela o outro, com retry
+            # OCO: TP + SL (opcional, sentinela cuida se desligado)
             oco_order = None
-            import time as _time
-            for attempt in range(3):
-                try:
+            if USE_OCO:
+                import time as _time
+                for attempt in range(3):
+                    try:
                     oco_qty_str = self.exchange.amount_to_precision(symbol, sell_qty)
                     # Formatar preços com precisão exata
                     market_info = self.exchange.market(symbol)
@@ -168,6 +170,7 @@ class ExecutionEngine:
                         oco_order = None
 
             # Persiste no KV store
+            import time as _time
             pos_data = {"symbol": symbol, "quantity": sell_qty, "entry_price": filled_price,
                          "sl_price": sl_price, "tp_price": tp_price, "entry_time": _time.time()}
             await self.kv.put(symbol.replace("/", "_"), json.dumps(pos_data).encode())
