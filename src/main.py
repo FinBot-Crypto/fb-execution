@@ -125,10 +125,12 @@ class ExecutionEngine:
             for attempt in range(3):
                 try:
                     oco_qty_str = self.exchange.amount_to_precision(symbol, sell_qty)
-                    # Garantir precos validos (minimo 1 tick, arredondado pela exchange)
-                    tp_str = self.exchange.price_to_precision(symbol, tp_price)
-                    sl_str = self.exchange.price_to_precision(symbol, sl_price)
-                    # Se SL ou TP forem invalidos (ex: < tick), usa valores seguros
+                    # Formatar preços com precisão exata (round manual, não confia no ccxt)
+                    market_info = self.exchange.market(symbol)
+                    price_precision = market_info["precision"]["price"]
+                    import decimal
+                    tp_str = format(decimal.Decimal(str(round(tp_price, price_precision))), 'f')
+                    sl_str = format(decimal.Decimal(str(round(sl_price, price_precision))), 'f')
                     if float(tp_str) <= float(sl_str) or float(sl_str) <= 0:
                         raise ValueError("SL/TP inválidos após formatação")
                     oco_order = self.exchange.private_post_order_oco({
