@@ -125,15 +125,19 @@ class ExecutionEngine:
             for attempt in range(3):
                 try:
                     oco_qty_str = self.exchange.amount_to_precision(symbol, sell_qty)
-                    tp_price_str = self.exchange.price_to_precision(symbol, tp_price)
-                    sl_price_str = self.exchange.price_to_precision(symbol, sl_price)
+                    # Garantir precos validos (minimo 1 tick, arredondado pela exchange)
+                    tp_str = self.exchange.price_to_precision(symbol, tp_price)
+                    sl_str = self.exchange.price_to_precision(symbol, sl_price)
+                    # Se SL ou TP forem invalidos (ex: < tick), usa valores seguros
+                    if float(tp_str) <= float(sl_str) or float(sl_str) <= 0:
+                        raise ValueError("SL/TP inválidos após formatação")
                     oco_order = self.exchange.private_post_order_oco({
                         "symbol": symbol.replace("/", ""),
                         "side": "SELL",
                         "quantity": oco_qty_str,
-                        "price": tp_price_str,
-                        "stopPrice": sl_price_str,
-                        "stopLimitPrice": sl_price_str,
+                        "price": tp_str,
+                        "stopPrice": sl_str,
+                        "stopLimitPrice": sl_str,
                         "stopLimitTimeInForce": "GTC",
                     })
                     logger.info(f"  {symbol}: OCO SL={sl_price} TP={tp_price} orderListId={oco_order.get('orderListId')}")
