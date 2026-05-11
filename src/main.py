@@ -8,7 +8,7 @@ Fluxo:
     → limit SELL (TP)
     → publica trade.executed
 """
-import asyncio, logging, os, json, ccxt, nats
+import asyncio, logging, os, json, ccxt, nats, base64
 from nats.js.api import ConsumerConfig
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -39,10 +39,13 @@ class ExecutionEngine:
         self.kv = await self.js.key_value("active_positions")
         logger.info(f"NATS conectado: {NATS_URL}")
 
+    async def _kv_key(self, symbol):
+        return base64.b64encode(symbol.encode()).decode()
+
     async def position_exists(self, symbol):
         """Verifica se já tem posição aberta no KV store."""
         try:
-            key = symbol.replace("/", "_")
+            key = await self._kv_key(symbol)
             await self.kv.get(key)
             return True
         except Exception:
@@ -92,7 +95,7 @@ class ExecutionEngine:
             logger.info(f"  [DRY RUN] {symbol}: BUY {quantity} @ ~{entry_price} SL={sl_price} TP={tp_price}")
             pos_data = {"symbol": symbol, "quantity": quantity, "entry_price": entry_price,
                          "sl_price": sl_price, "tp_price": tp_price, "entry_time": __import__('time').time()}
-            await self.kv.put(symbol.replace("/", "_"), json.dumps(pos_data).encode())
+            await self.kv.put(await self._kv_key(symbol), json.dumps(pos_data).encode())
             return {"symbol": symbol, "status": "dry_run", "quantity": quantity,
                     "entry_price": entry_price, "sl_price": sl_price, "tp_price": tp_price,
                     "tier": order.get("tier"), "strategy": order.get("strategy"),
