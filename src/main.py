@@ -176,7 +176,7 @@ class ExecutionEngine:
             import time as _time
             pos_data = {"symbol": symbol, "quantity": sell_qty, "entry_price": filled_price,
                          "sl_price": sl_price, "tp_price": tp_price, "entry_time": _time.time()}
-            await self.kv.put(symbol.replace("/", "_"), json.dumps(pos_data).encode())
+            await self.kv.put(await self._kv_key(symbol), json.dumps(pos_data).encode())
 
             return {"symbol": symbol, "status": "executed", "quantity": sell_qty,
                     "entry_price": filled_price, "sl_price": sl_price, "tp_price": tp_price,
