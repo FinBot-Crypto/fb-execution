@@ -100,7 +100,8 @@ class ExecutionEngine:
                     "entry_price": entry_price, "sl_price": sl_price, "tp_price": tp_price,
                     "tier": order.get("tier"), "strategy": order.get("strategy"),
                     "score": order.get("score"), "rsi": order.get("rsi"),
-                    "direction": order.get("direction", "LONG")}
+                    "direction": order.get("direction", "LONG"),
+                    "market_regime": order.get("market_regime", "neutral")}
 
         try:
             logger.info(f"  {symbol}: executando market BUY {quantity}...")
@@ -184,7 +185,8 @@ class ExecutionEngine:
                     "score": order.get("score"), "rsi": order.get("rsi"),
                     "direction": order.get("direction", "LONG"),
                     "buy_order_id": buy_order.get("id"),
-                    "oco_order_id": oco_order.get("orderListId") if oco_order else None}
+                    "oco_order_id": oco_order.get("orderListId") if oco_order else None,
+                    "market_regime": order.get("market_regime", "neutral")}
 
         except Exception as e:
             logger.error(f"  {symbol}: erro ao executar ordem: {e}")
