@@ -106,8 +106,8 @@ class ExecutionEngine:
         try:
             logger.info(f"  {symbol}: executando market BUY {quantity}...")
             buy_order = self.exchange.create_order(symbol, "market", "buy", quantity)
-            filled_price = float(buy_order.get("average", buy_order.get("price", entry_price)))
-            filled_qty = float(buy_order.get("filled", quantity))
+            filled_price = float(buy_order.get("average") or buy_order.get("price") or entry_price)
+            filled_qty = float(buy_order.get("filled") or quantity)
             logger.info(f"  {symbol}: BUY executado {filled_qty} @ {filled_price}")
 
             # Quantidade real no saldo (pós-taxa) para OCO
