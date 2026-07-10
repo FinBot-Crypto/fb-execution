@@ -31,6 +31,7 @@ class ExecutionEngine:
             "apiKey": BINANCE_API_KEY,
             "secret": BINANCE_API_SECRET,
             "enableRateLimit": True,
+            "timeout": 15000,
         })
 
     async def connect_nats(self):
